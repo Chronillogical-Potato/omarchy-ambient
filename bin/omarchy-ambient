@@ -306,9 +306,12 @@ visible_outputs() {
 
 # Every line is one event. A background hears about a new background or theme,
 # and about the screensaver starting and ending. A screensaver hears from the
-# dismiss helper ("ready", "activity", and "dismiss>>" when it exits).
+# dismiss helper ("ready", "activity", and "dismiss>>" when it exits). Both
+# hear about Hyprland ending.
 events() {
-  socat -u "UNIX-CONNECT:$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock" - &
+  # Hyprland closes the socket when it ends, and a session that ended leaves
+  # nothing to draw on: a new one does not inherit its programs.
+  { socat -u "UNIX-CONNECT:$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock" -; echo "hyprland>>ended"; } &
   if [[ $PLACEMENT == screensaver ]]; then
     if [[ -n $DISMISS ]]; then
       { "$DISMISS" --grace "$GRACE_MS"; echo "dismiss>>$?"; } &
@@ -340,7 +343,7 @@ launch() {
 
   if [[ $output != '*' ]]; then
     read -r width height scale < <(hyprctl -j monitors | jq -r --arg output "$output" '.[] | select(.name == $output) | "\(.width) \(.height) \(.scale)"')
-    [[ -n $width ]] || return
+    [[ -n $width ]] || return 1
   fi
 
   work=$runtime/${output/\*/all}
@@ -406,7 +409,8 @@ restart() {
     ((${#program[@]} > 0)) || exit 1
   else
     echo "restarting on $output"
-    launch "$output"
+    # An output Hyprland no longer describes counts as a quick failure.
+    launch "$output" || started[$output]=$SECONDS
   fi
 }
 
@@ -528,6 +532,7 @@ supervise() {
       background\>\>background) exit 0 ;;
       activity) echo "the user is back" && exit 0 ;;
       dismiss\>\>*) echo "the dismiss helper ended" && exit 1 ;;
+      hyprland\>\>ended) echo "Hyprland ended" && exit 0 ;;
       monitoradded\>\>*) [[ $outputs == each ]] && launch "${event#*>>}" ;;
       monitorremoved\>\>*) finish "${event#*>>}" ;;
       fullscreen\>\>* | workspace\>\>* | focusedmon\>\>* | activespecial\>\>* | screensaver\>\>screensaver | tick) ;;

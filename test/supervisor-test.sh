@@ -75,4 +75,17 @@ assert_eq "OWE is resumed" "$(tail -n 1 "$scratch/owe.log")" "resume"
 assert "the status file is gone" test ! -e "$HOME/.local/state/omarchy/ambient"
 assert "no program is left behind" bash -c "! grep -qszx 'OMARCHY_AMBIENT_SOURCE=fake' /proc/[0-9]*/environ"
 
+# A Hyprland session that ends closes its event socket, and a new session
+# never inherits the old one's programs: the supervisor ends with it instead
+# of restarting programs it can no longer place.
+: >"$scratch/log"
+stub socat 'sleep 2'
+"$AMBIENT" run fake mychoice >"$scratch/log" 2>&1 9>&- &
+supervisor=$!
+assert "it starts as usual" eventually logged "started fake mychoice on eDP-1"
+assert "the supervisor ends with Hyprland" eventually bash -c "! kill -0 $supervisor 2>/dev/null"
+assert "and says why" logged "Hyprland ended"
+assert "the status file is gone" test ! -e "$HOME/.local/state/omarchy/ambient"
+assert "no program is left behind" bash -c "! grep -qszx 'OMARCHY_AMBIENT_SOURCE=fake' /proc/[0-9]*/environ"
+
 finish_tests
